@@ -4,6 +4,7 @@ import (
 	"context"
 	"discord-military-analyst-bot/bot"
 	"discord-military-analyst-bot/config"
+	"go.uber.org/zap"
 	"os"
 	"os/signal"
 )
@@ -13,22 +14,30 @@ func main() {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 
+	defer func() {
+		signal.Stop(interrupt)
+		cancel()
+	}()
+
 	configData := config.Init()
-	discordBot := bot.Init(configData.Discord)
+	discordBot, messageQueue := bot.Init(configData.Discord)
+
+	go func() {
+		select {
+		case <-appCtx.Done():
+			discordBot.Close()
+		case <-interrupt:
+			zap.L().Info("Done.")
+			cancel()
+		}
+	}()
 
 	for {
 		select {
-		case <-appCtx.Done():
-			err := discordBot.Close()
-			if err != nil {
-				return
+		case message := <-messageQueue:
+			{
+				zap.L().Info("Message received.", zap.String("text", message.Content))
 			}
-		case <-interrupt:
-			err := discordBot.Close()
-			if err != nil {
-				return
-			}
-			cancel()
 		}
 	}
 }

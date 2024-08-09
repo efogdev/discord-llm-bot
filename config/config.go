@@ -22,7 +22,6 @@ type Discord struct {
 type Config struct {
 	Discord  Discord
 	Provider LLMProvider
-	Logger   *zap.Logger
 }
 
 func Init() *Config {
@@ -38,7 +37,7 @@ func Init() *Config {
 		panic(fmt.Errorf("fatal error config file: %w", err))
 	}
 
-	config.Logger = initLogger()
+	initLogger()
 
 	providerString := viper.Get("LLM_PROVIDER")
 	switch providerString {
@@ -59,10 +58,7 @@ func Init() *Config {
 	return &config
 }
 
-func initLogger() *zap.Logger {
+func initLogger() {
 	logger := zap.NewExample()
-	defer logger.Sync()
 	defer zap.ReplaceGlobals(logger)
-
-	return logger
 }
