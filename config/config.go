@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 )
@@ -13,15 +12,20 @@ const (
 	Groq
 )
 
-type Discord struct {
-	Token       string
-	WorkspaceId string
-	BotId       string
+type DiscordConfig struct {
+	Token string
+	BotId string
+}
+
+type GroqConfig struct {
+	ApiKey string
 }
 
 type Config struct {
-	Discord  Discord
+	Discord  DiscordConfig
+	Groq     GroqConfig
 	Provider LLMProvider
+	Model    string
 }
 
 func Init() *Config {
@@ -34,7 +38,7 @@ func Init() *Config {
 
 	err := viper.ReadInConfig()
 	if err != nil {
-		panic(fmt.Errorf("fatal error config file: %w", err))
+		zap.L().Fatal("fatal error config file", zap.Error(err))
 	}
 
 	initLogger()
@@ -49,11 +53,16 @@ func Init() *Config {
 		config.Provider = Ollama
 	}
 
-	config.Discord = Discord{
-		Token:       viper.GetString("DISCORD_TOKEN"),
-		WorkspaceId: viper.GetString("DISCORD_WORKSPACE_ID"),
-		BotId:       viper.GetString("DISCORD_BOT_ID"),
+	config.Discord = DiscordConfig{
+		Token: viper.GetString("DISCORD_TOKEN"),
+		BotId: viper.GetString("DISCORD_BOT_ID"),
 	}
+
+	config.Groq = GroqConfig{
+		ApiKey: viper.GetString("GROQ_API_KEY"),
+	}
+
+	config.Model = viper.GetString("MODEL")
 
 	return &config
 }
