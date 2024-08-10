@@ -5,6 +5,29 @@ import puppeteer from 'puppeteer'
 const ONLOAD_TIMEOUT_MS = 5000
 const TOTAL_TIMEOUT_MS = 12000 // >= ONLOAD_TIMEOUT
 
+const CUSTOM_STRATEGY = {
+    // Twitter
+    'https://x.com/': async (webpage) => {
+        await webpage.waitForSelector('article[role="article"]')
+
+        return webpage.evaluate(() => document.querySelector('[data-testid="tweetText"]').textContent)
+    },
+
+    // Telegram
+    'https://t.me/': async (webpage) => {
+        setTimeout(() => process.exit(4), ONLOAD_TIMEOUT_MS)
+
+        await webpage.waitForSelector('iframe[src*="https://t.me"]')
+
+        const iframeElementHandle = await webpage.$('iframe[src*="https://t.me"]')
+        const iframe = await iframeElementHandle.contentFrame()
+
+        await iframe.waitForSelector('.tgme_widget_message_text')
+
+        return iframe.evaluate(() => document.querySelector('.tgme_widget_message_text').textContent)
+    }
+}
+
 class WebpageContentParser {
     webpage = null
     document = null
@@ -50,6 +73,11 @@ class WebpageContentParser {
     }
 
     async checkReadability() {
+        const url = await this.webpage.evaluate(() => window.location.href)
+
+        if (Object.keys(CUSTOM_STRATEGY).some(key => url.startsWith(key)))
+            return true
+
         const documentString = await this.webpage.evaluate(() => new XMLSerializer().serializeToString(document))
         this.document = new JSDOM(documentString).window.document
 
@@ -57,17 +85,26 @@ class WebpageContentParser {
     }
 
     async parse() {
-        if (!this.document)
-            return
+        const url = await this.webpage.evaluate(() => window.location.href)
+        let content = ''
 
-        const parser = new Readability(this.document)
+        const strategy = Object.keys(CUSTOM_STRATEGY).find(key => url.startsWith(key))
+        if (strategy) {
+            content = await CUSTOM_STRATEGY[strategy](this.webpage)
+        } else {
+            if (!this.document)
+                return
 
-        if (!parser)
-            return
+            const parser = new Readability(this.document)
 
-        const { textContent } = parser.parse()
+            if (!parser)
+                return
 
-        process.stdout.write(textContent)
+            content = parser.parse().textContent
+        }
+
+
+        process.stdout.write(content)
         process.exit(0)
     }
 }
