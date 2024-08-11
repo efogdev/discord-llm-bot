@@ -129,6 +129,7 @@ func HandleMessage(
 
 	err, history := FetchHistory(msg, session, config.Data.Discord.BotId)
 	if err != nil {
+		zap.L().Debug("no bot mention, ignoring")
 		return
 	}
 
@@ -167,8 +168,8 @@ func HandleMessage(
 		zap.L().Panic("error reading prompt file", zap.Error(err))
 	}
 
-	var llmRequest string
-	var llmResponse string
+	llmRequest := ""
+	llmResponse := ""
 	if len(history) <= 1 && url != "" {
 		zap.L().Info("found url to parse", zap.String("url", url))
 

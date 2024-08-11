@@ -44,6 +44,7 @@ func OpenAICompatibleInfer(
 		"role":    "system",
 		"content": system,
 	}
+
 	messages = append(messages, systemMessage)
 
 	for _, item := range history {
@@ -51,10 +52,12 @@ func OpenAICompatibleInfer(
 		if item.IsBot {
 			role = "assistant"
 		}
+
 		historyMessage := map[string]string{
 			"role":    role,
 			"content": item.Content,
 		}
+
 		messages = append(messages, historyMessage)
 	}
 
@@ -62,6 +65,7 @@ func OpenAICompatibleInfer(
 		"role":    "user",
 		"content": message,
 	}
+
 	messages = append(messages, contentMessage)
 
 	requestBody := map[string]interface{}{
@@ -84,6 +88,7 @@ func OpenAICompatibleInfer(
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
+
 	if err != nil {
 		return err, ""
 	}
@@ -99,7 +104,6 @@ func OpenAICompatibleInfer(
 	if err != nil {
 		return err, ""
 	}
-
 	if resp.StatusCode != http.StatusOK {
 		return errors.New(string(body)), ""
 	}

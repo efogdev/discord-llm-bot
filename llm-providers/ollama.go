@@ -5,7 +5,6 @@ import (
 )
 
 type OllamaClient struct {
-	Token    string
 	Endpoint string
 }
 

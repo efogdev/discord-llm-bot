@@ -25,18 +25,14 @@ func main() {
 	case config.Ollama:
 		inferenceProvider = LLMProvider.CreateOllamaProvider(config.Data.Ollama.Endpoint)
 	default:
+		zap.L().Error("unknown LLM inference provider", zap.Any("provider", config.Data.Provider))
 		inferenceProvider = LLMProvider.CreateNoopClient()
 	}
 
 	for {
 		select {
 		case discordMessage := <-messageQueue:
-			go bot.HandleMessage(
-				discordMessage.Message,
-				discordMessage.Session,
-				inferenceProvider,
-				appCtx,
-			)
+			go bot.HandleMessage(discordMessage.Message, discordMessage.Session, inferenceProvider, appCtx)
 		case <-appCtx.Done():
 			_ = botInstance.Close()
 		case <-interrupt:

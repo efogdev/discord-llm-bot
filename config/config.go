@@ -51,7 +51,13 @@ func Init() {
 	viper.SetConfigType("env")
 	viper.AutomaticEnv()
 
-	_ = viper.ReadInConfig()
+	err := viper.ReadInConfig()
+	if err != nil {
+		config.LogLevel = zapcore.DebugLevel
+
+		InitLogger()
+		zap.L().Fatal("error reading config file", zap.Error(err))
+	}
 
 	levelString := viper.GetString("LOG_LEVEL")
 	switch levelString {
@@ -97,6 +103,14 @@ func Init() {
 	}
 
 	config.Model = viper.GetString("MODEL")
+
+	if config.Model == "" {
+		zap.L().Fatal("model name is required")
+	}
+
+	if config.Discord.BotId == "" || config.Discord.Token == "" {
+		zap.L().Fatal("invalid discord config")
+	}
 
 	zap.L().Debug("config loaded")
 }
