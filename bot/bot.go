@@ -27,7 +27,7 @@ func Init(discordConfig config.DiscordConfig) (*discordgo.Session, chan *Discord
 	queue := make(chan *DiscordMessage, 128)
 
 	if err != nil {
-		zap.L().Error("incorrect Discord token", zap.Error(err))
+		zap.L().Panic("incorrect Discord token", zap.Error(err))
 		return nil, nil
 	}
 
@@ -54,7 +54,7 @@ func Init(discordConfig config.DiscordConfig) (*discordgo.Session, chan *Discord
 
 	err = discord.Open()
 	if err != nil {
-		zap.L().Error("error initializing Discord bot", zap.Error(err))
+		zap.L().Panic("error initializing Discord bot", zap.Error(err))
 		return nil, nil
 	}
 
@@ -164,7 +164,7 @@ func HandleMessage(
 	}
 
 	if err != nil {
-		zap.L().Fatal("error reading prompt file", zap.Error(err))
+		zap.L().Panic("error reading prompt file", zap.Error(err))
 	}
 
 	var llmRequest string
@@ -186,17 +186,16 @@ func HandleMessage(
 
 		err, parsedContent := ParseURL(url)
 		if err != nil {
-			zap.L().Warn("couldn't parse the url")
-			_, _ = session.ChannelMessageSendReply(msg.ChannelID, "Your link is bullshit bro.", msg.MessageReference)
+			_, _ = session.ChannelMessageSendReply(msg.ChannelID, "Your link is bullshit bro", msg.MessageReference)
 			return
 		}
 
-		zap.L().Info("content parser success")
+		zap.L().Debug("content parser success")
 		content := fmt.Sprintf("URL: %s\nContent:\n%s", url, parsedContent)
 
 		llmRequest = content
 	} else {
-		zap.L().Info("no url found, running simple dialog", zap.String("message", msg.Content))
+		zap.L().Info("no url found", zap.String("message", msg.Content))
 
 		llmRequest = msg.Content
 	}
@@ -222,7 +221,7 @@ func HandleMessage(
 
 	_, err = session.ChannelMessageSendReply(msg.ChannelID, llmResponse, msg.Reference())
 	if err != nil {
-		zap.L().Warn("error sending reply", zap.String("text", err.Error()))
+		zap.L().Error("error sending reply", zap.String("text", err.Error()))
 		return
 	}
 }
@@ -236,7 +235,7 @@ func ParseURL(url string) (error, string) {
 		var exitError *exec.ExitError
 		if errors.As(err, &exitError) {
 			if exitError.ExitCode() != 0 {
-				zap.L().Error("content parser failed", zap.Int("errorCode", exitError.ExitCode()))
+				zap.L().Warn("content parser failed", zap.Int("errorCode", exitError.ExitCode()))
 			}
 		}
 
