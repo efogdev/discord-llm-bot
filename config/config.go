@@ -32,6 +32,7 @@ type GroqConfig struct {
 
 type OllamaConfig struct {
 	Endpoint string
+	ApiKey   string
 }
 
 type Config struct {
@@ -106,6 +107,7 @@ func Init() {
 
 	config.Ollama = OllamaConfig{
 		Endpoint: viper.GetString("OLLAMA_ENDPOINT"),
+		ApiKey:   viper.GetString("OLLAMA_API_KEY"),
 	}
 
 	config.Model = viper.GetString("MODEL")

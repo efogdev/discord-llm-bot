@@ -6,11 +6,13 @@ import (
 
 type OllamaClient struct {
 	Endpoint string
+	Token    string
 }
 
-func CreateOllamaProvider(endpoint string) *OllamaClient {
+func CreateOllamaProvider(endpoint string, token string) *OllamaClient {
 	provider := &OllamaClient{
 		Endpoint: endpoint,
+		Token:    token,
 	}
 
 	return provider
@@ -22,7 +24,7 @@ func (provider *OllamaClient) Infer(model string, system string, message string,
 		message,
 		history,
 		system,
-		"",
+		provider.Token,
 		provider.Endpoint,
 		ctx,
 	)

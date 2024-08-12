@@ -23,7 +23,7 @@ func main() {
 	case config.Groq:
 		inferenceProvider = LLMProvider.CreateGroqClient(config.Data.Groq.ApiKey)
 	case config.Ollama:
-		inferenceProvider = LLMProvider.CreateOllamaProvider(config.Data.Ollama.Endpoint)
+		inferenceProvider = LLMProvider.CreateOllamaProvider(config.Data.Ollama.Endpoint, config.Data.Ollama.ApiKey)
 	default:
 		zap.L().Error("unknown LLM inference provider", zap.Any("provider", config.Data.Provider))
 		inferenceProvider = LLMProvider.CreateNoopClient()
