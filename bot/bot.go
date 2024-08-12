@@ -232,7 +232,12 @@ func HandleMessage(
 
 	zap.L().Info("sending reply", zap.String("text", llmResponse))
 
-	_, err = session.ChannelMessageSendReply(msg.ChannelID, llmResponse, msg.Reference())
+	if msg.GuildID == "" {
+		_, err = session.ChannelMessageSend(msg.ChannelID, llmResponse)
+	} else {
+		_, err = session.ChannelMessageSendReply(msg.ChannelID, llmResponse, msg.Reference())
+	}
+
 	if err != nil {
 		zap.L().Error("error sending reply", zap.String("text", err.Error()))
 		return
