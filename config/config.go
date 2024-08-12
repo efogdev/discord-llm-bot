@@ -10,8 +10,7 @@ import (
 type LLMProvider int8
 
 const (
-	Ollama LLMProvider = iota
-	Groq
+	OpenAI LLMProvider = iota
 )
 
 type DiscordConfig struct {
@@ -26,19 +25,14 @@ type DiscordConfig struct {
 	DisableSystemForDM    bool
 }
 
-type GroqConfig struct {
-	ApiKey string
-}
-
-type OllamaConfig struct {
+type OpenAIConfig struct {
 	Endpoint string
 	ApiKey   string
 }
 
 type Config struct {
 	Discord  DiscordConfig
-	Groq     GroqConfig
-	Ollama   OllamaConfig
+	OpenAI   OpenAIConfig
 	Provider LLMProvider
 	Model    string
 	LogLevel zapcore.Level
@@ -81,12 +75,10 @@ func Init() {
 
 	providerString := viper.Get("LLM_PROVIDER")
 	switch providerString {
-	case "ollama":
-		config.Provider = Ollama
-	case "groq":
-		config.Provider = Groq
+	case "openai":
+		config.Provider = OpenAI
 	default:
-		config.Provider = Ollama
+		config.Provider = OpenAI
 	}
 
 	config.Discord = DiscordConfig{
@@ -101,13 +93,9 @@ func Init() {
 		DisableSystemForDM:    viper.GetBool("DISCORD_DM_CLEAN_SYSTEM"),
 	}
 
-	config.Groq = GroqConfig{
-		ApiKey: viper.GetString("GROQ_API_KEY"),
-	}
-
-	config.Ollama = OllamaConfig{
-		Endpoint: viper.GetString("OLLAMA_ENDPOINT"),
-		ApiKey:   viper.GetString("OLLAMA_API_KEY"),
+	config.OpenAI = OpenAIConfig{
+		Endpoint: viper.GetString("OPENAI_ENDPOINT"),
+		ApiKey:   viper.GetString("OPENAI_API_KEY"),
 	}
 
 	config.Model = viper.GetString("MODEL")
