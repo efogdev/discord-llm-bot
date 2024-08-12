@@ -141,19 +141,19 @@ func HandleMessage(
 
 	ignoreSystemPrompt := false
 
-	if config.Data.Discord.IgnoreSystemKeyword != "" {
-		if strings.Contains(msg.Content, config.Data.Discord.IgnoreSystemKeyword) {
+	if config.Data.Discord.KeywordToIgnoreSystem != "" {
+		if strings.Contains(msg.Content, config.Data.Discord.KeywordToIgnoreSystem) {
 			ignoreSystemPrompt = true
 		}
 
 		for _, item := range history {
-			if !item.IsBot && strings.Contains(item.Content, config.Data.Discord.IgnoreSystemKeyword) {
+			if !item.IsBot && strings.Contains(item.Content, config.Data.Discord.KeywordToIgnoreSystem) {
 				ignoreSystemPrompt = true
 			}
 		}
 	}
 
-	if msg.GuildID == "" && config.Data.Discord.NoSystemForDM {
+	if msg.GuildID == "" && config.Data.Discord.DisableSystemForDM {
 		ignoreSystemPrompt = true
 	}
 
@@ -186,7 +186,7 @@ func HandleMessage(
 		zap.L().Info("found url to parse", zap.String("url", url))
 
 		if ignoreSystemPrompt {
-			sanitizedContent := strings.ReplaceAll(msg.Content, config.Data.Discord.IgnoreSystemKeyword, "")
+			sanitizedContent := strings.ReplaceAll(msg.Content, config.Data.Discord.KeywordToIgnoreSystem, "")
 			sanitizedContent = strings.ReplaceAll(sanitizedContent, url, "")
 
 			history = append(history, LLMProvider.HistoryItem{

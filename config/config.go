@@ -15,15 +15,15 @@ const (
 )
 
 type DiscordConfig struct {
-	Token               string
-	BotId               string
-	SuperuserId         string
-	BonkEmojiName       string
-	BonkFromAnyone      bool
-	Typing              bool
-	IgnoreSystemKeyword string
-	AllowDM             bool
-	NoSystemForDM       bool
+	Token                 string
+	BotId                 string
+	SuperuserId           string
+	BonkEmojiName         string
+	BonkFromAnyone        bool
+	Typing                bool
+	KeywordToIgnoreSystem string
+	AllowDM               bool
+	DisableSystemForDM    bool
 }
 
 type GroqConfig struct {
@@ -89,15 +89,15 @@ func Init() {
 	}
 
 	config.Discord = DiscordConfig{
-		Token:               viper.GetString("DISCORD_TOKEN"),
-		BotId:               viper.GetString("DISCORD_BOT_ID"),
-		SuperuserId:         viper.GetString("DISCORD_SUPERUSER_ID"),
-		BonkEmojiName:       viper.GetString("DISCORD_BONK_EMOJI_NAME"),
-		BonkFromAnyone:      viper.GetBool("DISCORD_BONK_FROM_ANYONE"),
-		IgnoreSystemKeyword: viper.GetString("DISCORD_IGNORE_SYSTEM_KEYWORD"),
-		Typing:              viper.GetBool("DISCORD_TYPING"),
-		AllowDM:             viper.GetBool("DISCORD_ALLOW_DM"),
-		NoSystemForDM:       viper.GetBool("DISCORD_DM_CLEAN_SYSTEM"),
+		Token:                 viper.GetString("DISCORD_TOKEN"),
+		BotId:                 viper.GetString("DISCORD_BOT_ID"),
+		SuperuserId:           viper.GetString("DISCORD_SUPERUSER_ID"),
+		BonkEmojiName:         viper.GetString("DISCORD_BONK_EMOJI_NAME"),
+		BonkFromAnyone:        viper.GetBool("DISCORD_BONK_FROM_ANYONE"),
+		KeywordToIgnoreSystem: viper.GetString("DISCORD_IGNORE_SYSTEM_KEYWORD"),
+		Typing:                viper.GetBool("DISCORD_TYPING"),
+		AllowDM:               viper.GetBool("DISCORD_ALLOW_DM"),
+		DisableSystemForDM:    viper.GetBool("DISCORD_DM_CLEAN_SYSTEM"),
 	}
 
 	config.Groq = GroqConfig{
