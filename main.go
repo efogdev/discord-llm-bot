@@ -16,7 +16,7 @@ func main() {
 	signal.Notify(interrupt, os.Interrupt)
 
 	config.Init()
-	botInstance, messageQueue := bot.Init(config.Data.Discord)
+	botInstance, messageQueue := bot.Init()
 
 	var inferenceProvider LLMProvider.Client
 	switch config.Data.Provider {

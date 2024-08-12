@@ -20,7 +20,10 @@ type DiscordConfig struct {
 	SuperuserId         string
 	BonkEmojiName       string
 	BonkFromAnyone      bool
+	Typing              bool
 	IgnoreSystemKeyword string
+	AllowDM             bool
+	NoSystemForDM       bool
 }
 
 type GroqConfig struct {
@@ -91,7 +94,10 @@ func Init() {
 		SuperuserId:         viper.GetString("DISCORD_SUPERUSER_ID"),
 		BonkEmojiName:       viper.GetString("DISCORD_BONK_EMOJI_NAME"),
 		BonkFromAnyone:      viper.GetBool("DISCORD_BONK_FROM_ANYONE"),
-		IgnoreSystemKeyword: viper.GetString("IGNORE_SYSTEM_PROMPT_KEYWORD"),
+		IgnoreSystemKeyword: viper.GetString("DISCORD_IGNORE_SYSTEM_KEYWORD"),
+		Typing:              viper.GetBool("DISCORD_TYPING"),
+		AllowDM:             viper.GetBool("DISCORD_ALLOW_DM"),
+		NoSystemForDM:       viper.GetBool("DISCORD_DM_CLEAN_SYSTEM"),
 	}
 
 	config.Groq = GroqConfig{

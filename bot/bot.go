@@ -20,10 +20,10 @@ type DiscordMessage struct {
 	Message *discordgo.MessageCreate
 }
 
-func Init(discordConfig config.DiscordConfig) (*discordgo.Session, chan *DiscordMessage) {
+func Init() (*discordgo.Session, chan *DiscordMessage) {
 	zap.L().Debug("initializing bot")
 
-	discord, err := discordgo.New("Bot " + discordConfig.Token)
+	discord, err := discordgo.New("Bot " + config.Data.Discord.Token)
 	queue := make(chan *DiscordMessage, 128)
 
 	if err != nil {
@@ -32,7 +32,11 @@ func Init(discordConfig config.DiscordConfig) (*discordgo.Session, chan *Discord
 	}
 
 	discord.AddHandler(func(session *discordgo.Session, message *discordgo.MessageCreate) {
-		if message.Author.ID == discordConfig.BotId {
+		if message.Author.ID == config.Data.Discord.BotId {
+			return
+		}
+
+		if message.GuildID == "" && !config.Data.Discord.AllowDM {
 			return
 		}
 
@@ -40,7 +44,7 @@ func Init(discordConfig config.DiscordConfig) (*discordgo.Session, chan *Discord
 	})
 
 	discord.AddHandler(func(session *discordgo.Session, reaction *discordgo.MessageReactionAdd) {
-		if reaction.Emoji.Name == discordConfig.BonkEmojiName && (reaction.Member.User.ID == discordConfig.SuperuserId || discordConfig.BonkFromAnyone) {
+		if reaction.Emoji.Name == config.Data.Discord.BonkEmojiName && (reaction.Member.User.ID == config.Data.Discord.SuperuserId || config.Data.Discord.BonkFromAnyone) {
 			err = session.ChannelMessageDelete(reaction.MessageReaction.ChannelID, reaction.MessageReaction.MessageID)
 			zap.L().Info("got bonk, removing message", zap.Any("reaction", reaction))
 
@@ -50,7 +54,7 @@ func Init(discordConfig config.DiscordConfig) (*discordgo.Session, chan *Discord
 		}
 	})
 
-	discord.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsGuildMessageReactions
+	discord.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsGuildMessageReactions | discordgo.IntentDirectMessages
 
 	err = discord.Open()
 	if err != nil {
@@ -128,7 +132,7 @@ func HandleMessage(
 	url := ""
 
 	err, history := FetchHistory(msg, session, config.Data.Discord.BotId)
-	if err != nil {
+	if err != nil && msg.GuildID != "" {
 		zap.L().Debug("no bot mention, ignoring")
 		return
 	}
@@ -149,6 +153,10 @@ func HandleMessage(
 		}
 	}
 
+	if msg.GuildID == "" && config.Data.Discord.NoSystemForDM {
+		ignoreSystemPrompt = true
+	}
+
 	url = FindURL(msg.Content)
 
 	if url == "" && msg.ReferencedMessage != nil {
@@ -166,6 +174,10 @@ func HandleMessage(
 
 	if err != nil {
 		zap.L().Panic("error reading prompt file", zap.Error(err))
+	}
+
+	if config.Data.Discord.Typing {
+		_ = session.ChannelTyping(msg.ChannelID)
 	}
 
 	llmRequest := ""
