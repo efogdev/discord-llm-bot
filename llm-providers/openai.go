@@ -16,6 +16,14 @@ type OpenAIClient struct {
 	Token    string
 }
 
+type OpenAIResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
+}
+
 func CreateOpenAIProvider(endpoint string, token string) *OpenAIClient {
 	provider := &OpenAIClient{
 		Endpoint: endpoint,
@@ -96,18 +104,10 @@ func (provider *OpenAIClient) Infer(model string, system string, message string,
 		return errors.New(string(body)), ""
 	}
 
-	var result map[string]interface{}
+	var result OpenAIResponse
 	if err := json.Unmarshal(body, &result); err != nil {
 		return err, ""
 	}
-
-	if choices, ok := result["choices"].([]interface{}); ok && len(choices) > 0 {
-		if firstChoice, ok := choices[0].(map[string]interface{}); ok {
-			if content, ok := firstChoice["message"].(map[string]interface{})["content"].(string); ok {
-				return nil, content
-			}
-		}
-	}
-
-	return errors.New("received invalid API response"), ""
+	
+	return nil, result.Choices[0].Message.Content
 }
