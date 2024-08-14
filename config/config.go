@@ -4,13 +4,19 @@ import (
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"os"
 )
 
 type LLMProvider int8
 
 const (
 	OpenAI LLMProvider = iota
+)
+
+type Environment int8
+
+const (
+	Development Environment = iota
+	Production
 )
 
 type DiscordConfig struct {
@@ -36,6 +42,7 @@ type Config struct {
 	Provider LLMProvider
 	Model    string
 	LogLevel zapcore.Level
+	EnvType  Environment
 }
 
 var Data *Config = nil
@@ -81,6 +88,15 @@ func Init() {
 		config.Provider = OpenAI
 	}
 
+	envString := viper.Get("APP_ENV")
+	switch envString {
+	case "production":
+	case "prod":
+		config.EnvType = Production
+	default:
+		config.EnvType = Development
+	}
+
 	config.Discord = DiscordConfig{
 		Token:                 viper.GetString("DISCORD_TOKEN"),
 		BotId:                 viper.GetString("DISCORD_BOT_ID"),
@@ -112,16 +128,23 @@ func Init() {
 }
 
 func InitLogger() {
-	encoderCfg := zapcore.EncoderConfig{
-		MessageKey:     "msg",
-		LevelKey:       "level",
-		NameKey:        "logger",
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
-		EncodeTime:     zapcore.ISO8601TimeEncoder,
-		EncodeDuration: zapcore.StringDurationEncoder,
+	zapConfig := zap.Config{
+		Level:            zap.NewAtomicLevelAt(Data.LogLevel),
+		Development:      false,
+		Encoding:         "json",
+		EncoderConfig:    zap.NewProductionEncoderConfig(),
+		OutputPaths:      []string{"stdout"},
+		ErrorOutputPaths: []string{"stderr"},
 	}
-	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderCfg), os.Stdout, Data.LogLevel)
-	logger := zap.New(core)
 
+	if Data.EnvType == Development {
+		zapConfig.Development = true
+		zapConfig.Encoding = "console"
+		zapConfig.EncoderConfig = zap.NewDevelopmentEncoderConfig()
+		zapConfig.EncoderConfig.TimeKey = ""
+		zapConfig.EncoderConfig.LevelKey = ""
+	}
+
+	logger, _ := zapConfig.Build()
 	defer zap.ReplaceGlobals(logger)
 }
