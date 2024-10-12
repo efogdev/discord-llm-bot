@@ -31,7 +31,7 @@ const CUSTOM_STRATEGY = {
     // PDF
     'application/pdf': async (webpage) => {
         setTimeout(() => process.exit(4), ONLOAD_TIMEOUT_MS)
-        
+
         return readPdfText({ url: await webpage.evaluate(() => window.location.href) })
     },
 }

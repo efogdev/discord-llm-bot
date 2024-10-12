@@ -245,7 +245,7 @@ func HandleMessage(
 }
 
 func ParseURL(url string) (error, string) {
-	cmd := exec.Command("bun", "run", "index.js", url)
+	cmd := exec.Command("node", "index.js", url)
 	cmd.Dir = filepath.Join(".", "content-from-webpage")
 
 	output, err := cmd.Output()
