@@ -5,6 +5,7 @@
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
     "jsdom": "^24.1.1",
+    "pdf-text-reader": "^5.1.0",
     "puppeteer": "^23.0.2"
   }
 }

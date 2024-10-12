@@ -1,6 +1,7 @@
 import { Readability, isProbablyReaderable } from '@mozilla/readability'
 import { JSDOM } from 'jsdom'
 import puppeteer from 'puppeteer'
+import { readPdfText } from 'pdf-text-reader'
 
 const ONLOAD_TIMEOUT_MS = 5000
 const TOTAL_TIMEOUT_MS = 12000 // >= ONLOAD_TIMEOUT
@@ -25,7 +26,14 @@ const CUSTOM_STRATEGY = {
         await iframe.waitForSelector('.tgme_widget_message_text')
 
         return iframe.evaluate(() => document.querySelector('.tgme_widget_message_text').textContent)
-    }
+    },
+
+    // PDF
+    'application/pdf': async (webpage) => {
+        setTimeout(() => process.exit(4), ONLOAD_TIMEOUT_MS)
+        
+        return readPdfText({ url: await webpage.evaluate(() => window.location.href) })
+    },
 }
 
 class WebpageContentParser {
@@ -48,7 +56,12 @@ class WebpageContentParser {
         await this.webpage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36')
 
         try {
-            await this.webpage.goto(this.url)
+            const response = await this.webpage.goto(this.url)
+            const contentType = response.headers()['content-type']
+
+            if (CUSTOM_STRATEGY[contentType]) {
+                return this.parse(contentType)
+            }
 
             await new Promise(resolve => {
                 this.webpage.once('load', resolve)
@@ -56,14 +69,14 @@ class WebpageContentParser {
             })
 
             if (await this.checkReadability())
-                return this.parse()
+                return this.parse(contentType)
 
             await new Promise(resolve => {
                 setTimeout(resolve, Math.max(0, TOTAL_TIMEOUT_MS - ONLOAD_TIMEOUT_MS))
             })
 
             if (await this.checkReadability())
-                return this.parse()
+                return this.parse(contentType)
 
             process.exit(3)
         } catch (e) {
@@ -84,11 +97,11 @@ class WebpageContentParser {
         return isProbablyReaderable(this.document)
     }
 
-    async parse() {
+    async parse(mimeType = 'application/octet-stream') {
         const url = await this.webpage.evaluate(() => window.location.href)
         let content = ''
 
-        const strategy = Object.keys(CUSTOM_STRATEGY).find(key => url.startsWith(key))
+        const strategy = Object.keys(CUSTOM_STRATEGY).find(key => url.startsWith(key) || key === mimeType)
         if (strategy) {
             content = await CUSTOM_STRATEGY[strategy](this.webpage)
         } else {
