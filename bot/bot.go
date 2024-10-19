@@ -182,15 +182,17 @@ func HandleMessage(
 
 	llmRequest := ""
 	llmResponse := ""
+	msgContent := msg.Content
+	if ignoreSystemPrompt {
+		msgContent = strings.ReplaceAll(msg.Content, config.Data.Discord.KeywordToIgnoreSystem, "")
+	}
+
 	if len(history) <= 1 && url != "" {
 		zap.L().Info("found url to parse", zap.String("url", url))
 
 		if ignoreSystemPrompt {
-			sanitizedContent := strings.ReplaceAll(msg.Content, config.Data.Discord.KeywordToIgnoreSystem, "")
-			sanitizedContent = strings.ReplaceAll(sanitizedContent, url, "")
-
 			history = append(history, LLMProvider.HistoryItem{
-				Content: sanitizedContent,
+				Content: strings.ReplaceAll(msgContent, url, ""),
 				IsBot:   false,
 			})
 		}
@@ -208,9 +210,9 @@ func HandleMessage(
 
 		llmRequest = content
 	} else {
-		zap.L().Info("no url found", zap.String("message", msg.Content))
+		zap.L().Info("no url found", zap.String("message", msgContent))
 
-		llmRequest = msg.Content
+		llmRequest = msgContent
 	}
 
 	zap.L().Debug("inferencing", zap.String("content", llmRequest), zap.Any("history", history))
