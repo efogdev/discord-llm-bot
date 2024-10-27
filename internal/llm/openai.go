@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const ImgDefaultSteps = 10
+
 type OpenAIClient struct {
 	Endpoint string
 	Token    string
@@ -46,7 +48,7 @@ func (c *OpenAIClient) MakeImage(ctx context.Context, model string, system strin
 	}
 
 	requestBody := map[string]any{
-		"steps":  20,
+		"steps":  ImgDefaultSteps,
 		"n":      count,
 		"model":  model,
 		"prompt": system,
