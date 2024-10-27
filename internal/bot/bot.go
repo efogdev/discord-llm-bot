@@ -35,8 +35,8 @@ var imageContentTypes = []string{
 }
 
 const (
-	ImgDefaultWidth  = 1024
-	ImgDefaultHeight = 768
+	ImgDefaultWidth  = 400
+	ImgDefaultHeight = 300
 	ImgDefaultCount  = 1
 )
 
@@ -160,7 +160,7 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 	// image generation mode
 	if config.Data.Discord.MakeImageKeyword != "" && strings.Contains(msg.Content, config.Data.Discord.MakeImageKeyword) {
 		_ = session.MessageReactionAdd(msg.ChannelID, msg.ID, "👨🏻‍🎨")
-		
+
 		system := strings.ReplaceAll(msg.Content, config.Data.Discord.MakeImageKeyword, "")
 		images, err := client.MakeImage(ctx, config.Data.ImageModel, system, ImgDefaultWidth, ImgDefaultHeight, ImgDefaultCount)
 		if err != nil {
