@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const ImgDefaultSteps = 10
+const ImgDefaultSteps = 25
 
 type OpenAIClient struct {
 	Endpoint string
