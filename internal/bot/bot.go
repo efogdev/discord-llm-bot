@@ -197,6 +197,8 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 			zap.L().Error("failed to send message", zap.Error(err))
 			return
 		}
+		
+		return
 	}
 
 	ignoreSystemPrompt := false
