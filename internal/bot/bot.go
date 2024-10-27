@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +33,12 @@ var imageContentTypes = []string{
 	"image/avif",
 	"image/jxl",
 }
+
+const (
+	ImgDefaultWidth  = 1024
+	ImgDefaultHeight = 768
+	ImgDefaultCount  = 1
+)
 
 type DiscordMessage struct {
 	Session *discordgo.Session
@@ -116,9 +124,9 @@ func FetchHistory(message *discordgo.MessageCreate, session *discordgo.Session, 
 	for current != nil {
 		cleanContent := regexp.MustCompile(`<@([0-9]+?)>`).ReplaceAllString(current.Content, "")
 		history = append([]llm.HistoryItem{{
-			IsBot:       current.Author.ID == botId,
-			Content:     cleanContent,
-			Attachments: current.Attachments,
+			IsBotMessage: current.Author.ID == botId,
+			Content:      cleanContent,
+			Attachments:  current.Attachments,
 		}}, history...)
 
 		if current.Type == discordgo.MessageTypeReply {
@@ -141,14 +149,7 @@ func ReadSystemPrompt() (error, string) {
 	return nil, strings.TrimSpace(string(systemPrompt))
 }
 
-func HandleMessage(
-	msg *discordgo.MessageCreate,
-	session *discordgo.Session,
-	client llm.Client,
-	ctx context.Context,
-) {
-	url := ""
-
+func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, client llm.Client, ctx context.Context) {
 	err, history := FetchHistory(msg, session, config.Data.Discord.BotId)
 	if err != nil && msg.GuildID != "" {
 		return
@@ -156,14 +157,56 @@ func HandleMessage(
 
 	zap.L().Debug("message received", zap.String("text", msg.Content))
 
+	// image generation mode
+	if config.Data.Discord.MakeImageKeyword != "" && strings.Contains(msg.Content, config.Data.Discord.MakeImageKeyword) {
+		system := strings.ReplaceAll(msg.Content, config.Data.Discord.MakeImageKeyword, "")
+		images, err := client.MakeImage(ctx, config.Data.ImageModel, system, ImgDefaultWidth, ImgDefaultHeight, ImgDefaultCount)
+		if err != nil {
+			zap.L().Error("error making image", zap.Error(err))
+			return
+		}
+
+		if len(images) == 0 {
+			zap.L().Error("no images in response")
+			return
+		}
+
+		imageUrl := images[0]
+		resp, err := http.Get(imageUrl)
+		if err != nil {
+			zap.L().Error("failed to download image", zap.Error(err))
+			return
+		}
+		defer resp.Body.Close()
+
+		ext := filepath.Ext(imageUrl)
+		if ext == "" {
+			ext = ".png"
+		}
+		filename := uuid.Must(uuid.NewV7()).String() + ext
+
+		_, err = session.ChannelMessageSendComplex(msg.ChannelID, &discordgo.MessageSend{
+			Files: []*discordgo.File{{
+				Name:        filename,
+				ContentType: resp.Header.Get("Content-Type"),
+				Reader:      resp.Body,
+			}},
+			Reference: msg.Reference(),
+		})
+		if err != nil {
+			zap.L().Error("failed to send message", zap.Error(err))
+			return
+		}
+	}
+
 	ignoreSystemPrompt := false
-	if config.Data.Discord.KeywordToIgnoreSystem != "" {
-		if strings.Contains(msg.Content, config.Data.Discord.KeywordToIgnoreSystem) {
+	if config.Data.Discord.IgnoreSystemKeyword != "" {
+		if strings.Contains(msg.Content, config.Data.Discord.IgnoreSystemKeyword) {
 			ignoreSystemPrompt = true
 		}
 
 		for _, item := range history {
-			if !item.IsBot && strings.Contains(item.Content, config.Data.Discord.KeywordToIgnoreSystem) {
+			if !item.IsBotMessage && strings.Contains(item.Content, config.Data.Discord.IgnoreSystemKeyword) {
 				ignoreSystemPrompt = true
 			}
 		}
@@ -173,7 +216,7 @@ func HandleMessage(
 		ignoreSystemPrompt = true
 	}
 
-	url = FindURL(msg.Content)
+	url := FindURL(msg.Content)
 	if url == "" && msg.ReferencedMessage != nil {
 		url = FindURL(msg.ReferencedMessage.Content)
 	}
@@ -198,7 +241,7 @@ func HandleMessage(
 	llmResponse := ""
 	msgContent := msg.Content
 	if ignoreSystemPrompt {
-		msgContent = strings.ReplaceAll(msg.Content, config.Data.Discord.KeywordToIgnoreSystem, "")
+		msgContent = strings.ReplaceAll(msg.Content, config.Data.Discord.IgnoreSystemKeyword, "")
 	}
 
 	if len(history) <= 1 && url != "" {
@@ -206,8 +249,8 @@ func HandleMessage(
 
 		if ignoreSystemPrompt {
 			history = append(history, llm.HistoryItem{
-				Content: strings.ReplaceAll(msgContent, url, ""),
-				IsBot:   false,
+				Content:      strings.ReplaceAll(msgContent, url, ""),
+				IsBotMessage: false,
 			})
 		}
 
@@ -233,7 +276,7 @@ func HandleMessage(
 	}
 
 	zap.L().Debug("inferencing", zap.String("content", llmRequest), zap.Any("history", history))
-	err, llmResponse = client.Infer(config.Data.Model, system, llmRequest, history, images, ctx)
+	llmResponse, err = client.Infer(ctx, config.Data.Model, system, llmRequest, history, images)
 
 	if err != nil {
 		zap.L().Error("error while trying to infer an llm", zap.Error(err))

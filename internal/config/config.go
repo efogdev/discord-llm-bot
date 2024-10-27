@@ -20,29 +20,32 @@ const (
 )
 
 type DiscordConfig struct {
-	Token                 string
-	BotId                 string
-	SuperuserId           string
-	BonkEmojiName         string
-	BonkFromAnyone        bool
-	Typing                bool
-	KeywordToIgnoreSystem string
-	AllowDM               bool
-	DisableSystemForDM    bool
+	Token               string
+	BotId               string
+	SuperuserId         string
+	BonkEmojiName       string
+	BonkFromAnyone      bool
+	Typing              bool
+	IgnoreSystemKeyword string
+	MakeImageKeyword    string
+	AllowDM             bool
+	DisableSystemForDM  bool
 }
 
 type OpenAIConfig struct {
-	Endpoint string
-	ApiKey   string
+	Endpoint      string
+	ImageEndpoint string
+	ApiKey        string
 }
 
 type Config struct {
-	Discord  DiscordConfig
-	OpenAI   OpenAIConfig
-	Provider LLMProvider
-	Model    string
-	LogLevel zapcore.Level
-	EnvType  Environment
+	Discord    DiscordConfig
+	OpenAI     OpenAIConfig
+	Provider   LLMProvider
+	Model      string
+	ImageModel string
+	LogLevel   zapcore.Level
+	EnvType    Environment
 }
 
 var Data *Config = nil
@@ -98,23 +101,26 @@ func Init() {
 	}
 
 	config.Discord = DiscordConfig{
-		Token:                 viper.GetString("DISCORD_TOKEN"),
-		BotId:                 viper.GetString("DISCORD_BOT_ID"),
-		SuperuserId:           viper.GetString("DISCORD_SUPERUSER_ID"),
-		BonkEmojiName:         viper.GetString("DISCORD_BONK_EMOJI_NAME"),
-		BonkFromAnyone:        viper.GetBool("DISCORD_BONK_FROM_ANYONE"),
-		KeywordToIgnoreSystem: viper.GetString("DISCORD_IGNORE_SYSTEM_KEYWORD"),
-		Typing:                viper.GetBool("DISCORD_TYPING"),
-		AllowDM:               viper.GetBool("DISCORD_ALLOW_DM"),
-		DisableSystemForDM:    viper.GetBool("DISCORD_DM_CLEAN_SYSTEM"),
+		Token:               viper.GetString("DISCORD_TOKEN"),
+		BotId:               viper.GetString("DISCORD_BOT_ID"),
+		SuperuserId:         viper.GetString("DISCORD_SUPERUSER_ID"),
+		BonkEmojiName:       viper.GetString("DISCORD_BONK_EMOJI_NAME"),
+		BonkFromAnyone:      viper.GetBool("DISCORD_BONK_FROM_ANYONE"),
+		IgnoreSystemKeyword: viper.GetString("DISCORD_IGNORE_SYSTEM_KEYWORD"),
+		MakeImageKeyword:    viper.GetString("DISCORD_MAKE_IMAGE_KEYWORD"),
+		Typing:              viper.GetBool("DISCORD_TYPING"),
+		AllowDM:             viper.GetBool("DISCORD_ALLOW_DM"),
+		DisableSystemForDM:  viper.GetBool("DISCORD_DM_CLEAN_SYSTEM"),
 	}
 
 	config.OpenAI = OpenAIConfig{
-		Endpoint: viper.GetString("OPENAI_ENDPOINT"),
-		ApiKey:   viper.GetString("OPENAI_API_KEY"),
+		Endpoint:      viper.GetString("OPENAI_ENDPOINT"),
+		ImageEndpoint: viper.GetString("OPENAI_IMG_ENDPOINT"),
+		ApiKey:        viper.GetString("OPENAI_API_KEY"),
 	}
 
 	config.Model = viper.GetString("MODEL")
+	config.ImageModel = viper.GetString("IMAGE_MODEL")
 
 	if config.Model == "" {
 		zap.L().Fatal("model name is required")
