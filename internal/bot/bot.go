@@ -2,8 +2,8 @@ package bot
 
 import (
 	"context"
-	"discord-military-analyst-bot/config"
-	"discord-military-analyst-bot/llm-providers"
+	"discord-military-analyst-bot/internal/config"
+	"discord-military-analyst-bot/internal/llm"
 	"errors"
 	"fmt"
 	"github.com/bwmarrin/discordgo"
@@ -12,8 +12,25 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
+
+var imageContentTypes = []string{
+	"image/jpeg",
+	"image/png",
+	"image/gif",
+	"image/webp",
+	"image/svg+xml",
+	"image/tiff",
+	"image/bmp",
+	"image/x-icon",
+	"image/vnd.microsoft.icon",
+	"image/heic",
+	"image/heif",
+	"image/avif",
+	"image/jxl",
+}
 
 type DiscordMessage struct {
 	Session *discordgo.Session
@@ -76,7 +93,7 @@ func FindURL(content string) string {
 	return ""
 }
 
-func FetchHistory(message *discordgo.MessageCreate, session *discordgo.Session, botId string) (error, []LLMProvider.HistoryItem) {
+func FetchHistory(message *discordgo.MessageCreate, session *discordgo.Session, botId string) (error, []llm.HistoryItem) {
 	botMentioned := false
 
 	for _, mention := range message.Mentions {
@@ -93,14 +110,15 @@ func FetchHistory(message *discordgo.MessageCreate, session *discordgo.Session, 
 		return errors.New("bot not mentioned"), nil
 	}
 
-	var history []LLMProvider.HistoryItem
+	var history []llm.HistoryItem
 
 	current := message.ReferencedMessage
 	for current != nil {
 		cleanContent := regexp.MustCompile(`<@([0-9]+?)>`).ReplaceAllString(current.Content, "")
-		history = append([]LLMProvider.HistoryItem{{
-			IsBot:   current.Author.ID == botId,
-			Content: cleanContent,
+		history = append([]llm.HistoryItem{{
+			IsBot:       current.Author.ID == botId,
+			Content:     cleanContent,
+			Attachments: current.Attachments,
 		}}, history...)
 
 		if current.Type == discordgo.MessageTypeReply {
@@ -115,7 +133,7 @@ func FetchHistory(message *discordgo.MessageCreate, session *discordgo.Session, 
 }
 
 func ReadSystemPrompt() (error, string) {
-	systemPrompt, err := os.ReadFile(filepath.Join("bot", "system-prompt.txt"))
+	systemPrompt, err := os.ReadFile(filepath.Join("internal", "bot", "system-prompt.txt"))
 	if err != nil {
 		return err, ""
 	}
@@ -126,21 +144,19 @@ func ReadSystemPrompt() (error, string) {
 func HandleMessage(
 	msg *discordgo.MessageCreate,
 	session *discordgo.Session,
-	client LLMProvider.Client,
+	client llm.Client,
 	ctx context.Context,
 ) {
 	url := ""
 
 	err, history := FetchHistory(msg, session, config.Data.Discord.BotId)
 	if err != nil && msg.GuildID != "" {
-		zap.L().Debug("no bot mention, ignoring")
 		return
 	}
 
 	zap.L().Debug("message received", zap.String("text", msg.Content))
 
 	ignoreSystemPrompt := false
-
 	if config.Data.Discord.KeywordToIgnoreSystem != "" {
 		if strings.Contains(msg.Content, config.Data.Discord.KeywordToIgnoreSystem) {
 			ignoreSystemPrompt = true
@@ -158,14 +174,12 @@ func HandleMessage(
 	}
 
 	url = FindURL(msg.Content)
-
 	if url == "" && msg.ReferencedMessage != nil {
 		url = FindURL(msg.ReferencedMessage.Content)
 	}
 
 	system := ""
 	err = nil
-
 	if !ignoreSystemPrompt {
 		err, system = ReadSystemPrompt()
 	} else {
@@ -191,32 +205,35 @@ func HandleMessage(
 		zap.L().Info("found url to parse", zap.String("url", url))
 
 		if ignoreSystemPrompt {
-			history = append(history, LLMProvider.HistoryItem{
+			history = append(history, llm.HistoryItem{
 				Content: strings.ReplaceAll(msgContent, url, ""),
 				IsBot:   false,
 			})
 		}
 
 		_ = session.MessageReactionAdd(msg.ChannelID, msg.ID, "👀")
-
 		err, parsedContent := ParseURL(url)
 		if err != nil {
-			_, _ = session.ChannelMessageSendReply(msg.ChannelID, "Your link is bullshit bro", msg.MessageReference)
+			_, _ = session.ChannelMessageSendReply(msg.ChannelID, "Your link is bullshit bro.", msg.MessageReference)
 			return
 		}
 
 		zap.L().Debug("content parser success")
 		content := fmt.Sprintf("URL: %s\nContent:\n%s", url, parsedContent)
-
 		llmRequest = content
 	} else {
 		zap.L().Info("no url found", zap.String("message", msgContent))
-
 		llmRequest = msgContent
 	}
 
+	// images := FindImages(msg, history)
+	var images []string
+	if len(images) > 0 {
+		zap.L().Info("attaching images", zap.Any("images", images))
+	}
+
 	zap.L().Debug("inferencing", zap.String("content", llmRequest), zap.Any("history", history))
-	err, llmResponse = client.Infer(config.Data.Model, system, llmRequest, history, ctx)
+	err, llmResponse = client.Infer(config.Data.Model, system, llmRequest, history, images, ctx)
 
 	if err != nil {
 		zap.L().Error("error while trying to infer an llm", zap.Error(err))
@@ -244,6 +261,29 @@ func HandleMessage(
 		zap.L().Error("error sending reply", zap.String("text", err.Error()))
 		return
 	}
+}
+
+// FindImages actually finds only 1 image for now
+func FindImages(msg *discordgo.MessageCreate, history []llm.HistoryItem) []string {
+	for _, attach := range msg.Attachments {
+		if !slices.Contains(imageContentTypes, attach.ContentType) {
+			continue
+		}
+
+		return []string{attach.URL}
+	}
+
+	for _, historyItem := range history {
+		for _, attach := range historyItem.Attachments {
+			if !slices.Contains(imageContentTypes, attach.ContentType) {
+				continue
+			}
+
+			return []string{attach.URL}
+		}
+	}
+
+	return []string{}
 }
 
 func ParseURL(url string) (error, string) {

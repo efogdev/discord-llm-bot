@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"discord-military-analyst-bot/bot"
-	"discord-military-analyst-bot/config"
-	"discord-military-analyst-bot/llm-providers"
+	"discord-military-analyst-bot/internal/bot"
+	"discord-military-analyst-bot/internal/config"
+	"discord-military-analyst-bot/internal/llm"
 	"go.uber.org/zap"
 	"os"
 	"os/signal"
@@ -18,13 +18,12 @@ func main() {
 	config.Init()
 	botInstance, messageQueue := bot.Init()
 
-	var inferenceProvider LLMProvider.Client
+	var inferenceProvider llm.Client
 	switch config.Data.Provider {
 	case config.OpenAI:
-		inferenceProvider = LLMProvider.CreateOpenAIProvider(config.Data.OpenAI.Endpoint, config.Data.OpenAI.ApiKey)
+		inferenceProvider = llm.NewOpenAIClient(config.Data.OpenAI.Endpoint, config.Data.OpenAI.ApiKey)
 	default:
-		zap.L().Error("unknown LLM inference provider", zap.Any("provider", config.Data.Provider))
-		inferenceProvider = LLMProvider.CreateNoopClient()
+		zap.L().Panic("unknown LLM inference provider", zap.Any("provider", config.Data.Provider))
 	}
 
 	for {
