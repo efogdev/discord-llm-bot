@@ -35,8 +35,8 @@ var imageContentTypes = []string{
 }
 
 const (
-	ImgDefaultWidth  = 400
-	ImgDefaultHeight = 300
+	ImgDefaultWidth  = 384
+	ImgDefaultHeight = 288
 	ImgDefaultCount  = 1
 )
 
