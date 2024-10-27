@@ -159,6 +159,8 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 
 	// image generation mode
 	if config.Data.Discord.MakeImageKeyword != "" && strings.Contains(msg.Content, config.Data.Discord.MakeImageKeyword) {
+		_ = session.MessageReactionAdd(msg.ChannelID, msg.ID, "👨🏻‍🎨")
+		
 		system := strings.ReplaceAll(msg.Content, config.Data.Discord.MakeImageKeyword, "")
 		images, err := client.MakeImage(ctx, config.Data.ImageModel, system, ImgDefaultWidth, ImgDefaultHeight, ImgDefaultCount)
 		if err != nil {
@@ -197,7 +199,7 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 			zap.L().Error("failed to send message", zap.Error(err))
 			return
 		}
-		
+
 		return
 	}
 
