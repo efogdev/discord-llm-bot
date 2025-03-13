@@ -225,7 +225,7 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 		url = FindURL(msg.ReferencedMessage.Content)
 	}
 
-	system := ""
+	system := "Keep your response very short, two to three sentenses. Be VERY concise and say only important things not meaningful words."
 	err = nil
 	if !ignoreSystemPrompt {
 		err, system = ReadSystemPrompt()
