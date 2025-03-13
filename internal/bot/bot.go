@@ -7,39 +7,15 @@ import (
 	"discord-military-analyst-bot/internal/llm"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
-)
-
-var imageContentTypes = []string{
-	"image/jpeg",
-	"image/png",
-	"image/gif",
-	"image/webp",
-	"image/svg+xml",
-	"image/tiff",
-	"image/bmp",
-	"image/x-icon",
-	"image/vnd.microsoft.icon",
-	"image/heic",
-	"image/heif",
-	"image/avif",
-	"image/jxl",
-}
-
-const (
-	ImgDefaultWidth  = 384
-	ImgDefaultHeight = 288
-	ImgDefaultCount  = 1
 )
 
 var messageDB *db.MessageDB
@@ -215,52 +191,6 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 
 	zap.L().Debug("message received", zap.String("text", msg.Content))
 
-	// image generation mode
-	if config.Data.Discord.MakeImageKeyword != "" && strings.Contains(msg.Content, config.Data.Discord.MakeImageKeyword) {
-		_ = session.MessageReactionAdd(msg.ChannelID, msg.ID, "👨🏻‍🎨")
-
-		system := strings.ReplaceAll(msg.Content, config.Data.Discord.MakeImageKeyword, "")
-		images, err := client.MakeImage(ctx, config.Data.ImageModel, system, ImgDefaultWidth, ImgDefaultHeight, ImgDefaultCount)
-		if err != nil {
-			zap.L().Error("error making image", zap.Error(err))
-			return
-		}
-
-		if len(images) == 0 {
-			zap.L().Error("no images in response")
-			return
-		}
-
-		imageUrl := images[0]
-		resp, err := http.Get(imageUrl)
-		if err != nil {
-			zap.L().Error("failed to download image", zap.Error(err))
-			return
-		}
-		defer resp.Body.Close()
-
-		ext := filepath.Ext(imageUrl)
-		if ext == "" {
-			ext = ".png"
-		}
-		filename := uuid.Must(uuid.NewV7()).String() + ext
-
-		_, err = session.ChannelMessageSendComplex(msg.ChannelID, &discordgo.MessageSend{
-			Files: []*discordgo.File{{
-				Name:        filename,
-				ContentType: resp.Header.Get("Content-Type"),
-				Reader:      resp.Body,
-			}},
-			Reference: msg.Reference(),
-		})
-		if err != nil {
-			zap.L().Error("failed to send message", zap.Error(err))
-			return
-		}
-
-		return
-	}
-
 	ignoreSystemPrompt := false
 	if config.Data.Discord.IgnoreSystemKeyword != "" {
 		if strings.Contains(msg.Content, config.Data.Discord.IgnoreSystemKeyword) {
@@ -300,7 +230,6 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 	}
 
 	llmRequest := ""
-	llmResponse := ""
 	msgContent := msg.Content
 	if ignoreSystemPrompt {
 		msgContent = strings.ReplaceAll(msg.Content, config.Data.Discord.IgnoreSystemKeyword, "")
@@ -331,85 +260,151 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 		llmRequest = msgContent
 	}
 
-	// images := FindImages(msg, history)
-	var images []string
-	if len(images) > 0 {
-		zap.L().Info("attaching images", zap.Any("images", images))
-	}
-
-	// Get all related messages from the database for context
+	// Get message history
 	var allHistory []llm.HistoryItem
-	if messageDB != nil {
-		allHistory, err = messageDB.GetAllRelatedMessages(msg.ID, config.Data.Discord.BotId)
-		if err != nil {
-			zap.L().Error("failed to get all related messages", zap.Error(err))
-			allHistory = history // Fallback to direct history
+	if ignoreSystemPrompt {
+		// When ignoring system prompt, only use the immediate parent message
+		if len(history) > 0 {
+			allHistory = history[:1]
+		} else {
+			allHistory = history
 		}
 	} else {
-		allHistory = history
+		// Get full history for normal mode
+		if messageDB != nil {
+			allHistory, err = messageDB.GetAllRelatedMessages(msg.ID, config.Data.Discord.BotId)
+			if err != nil {
+				zap.L().Error("failed to get all related messages", zap.Error(err))
+				allHistory = history // Fallback to direct history
+			}
+		} else {
+			allHistory = history
+		}
 	}
 
-	zap.L().Debug("inferencing", zap.String("content", llmRequest), zap.Any("history", allHistory))
-	llmResponse, err = client.Infer(ctx, config.Data.Model, system, llmRequest, allHistory, images)
-
-	if err != nil {
-		zap.L().Error("error while trying to infer an llm", zap.Error(err))
-		return
-	}
-
-	if len(llmResponse) > 1999 {
-		llmResponse = llmResponse[:1999]
-	}
-
-	if llmResponse == "" {
-		zap.L().Warn("empty llm response")
-		return
-	}
-
-	zap.L().Info("sending reply", zap.String("text", llmResponse))
+	zap.L().Debug("inferencing with streaming", zap.String("content", llmRequest), zap.Any("history", allHistory))
 
 	var sentMessage *discordgo.Message
-	if msg.GuildID == "" {
-		sentMessage, err = session.ChannelMessageSend(msg.ChannelID, llmResponse)
-	} else {
-		sentMessage, err = session.ChannelMessageSendReply(msg.ChannelID, llmResponse, msg.Reference())
-	}
+	var messageCreated bool
 
-	// Save the bot's response to the database
-	if messageDB != nil && sentMessage != nil {
-		err := messageDB.SaveMessage(sentMessage, true)
-		if err != nil {
-			zap.L().Error("failed to save bot response to database", zap.Error(err))
+	// Use streaming API
+	openaiClient, ok := client.(*llm.OpenAIClient)
+	if !ok {
+		zap.L().Error("client is not an OpenAIClient, falling back to non-streaming")
+		llmResponse, inferErr := client.Infer(ctx, config.Data.Model, system, llmRequest, allHistory)
+		if inferErr != nil {
+			zap.L().Error("error while trying to infer an llm", zap.Error(inferErr))
+			return
 		}
-	}
 
-	if err != nil {
-		zap.L().Error("error sending reply", zap.String("text", err.Error()))
+		if len(llmResponse) > 1999 {
+			llmResponse = llmResponse[:1999]
+		}
+
+		if llmResponse == "" {
+			zap.L().Warn("empty llm response")
+			return
+		}
+
+		// Update the message with the full response
+		_, err = session.ChannelMessageEdit(sentMessage.ChannelID, sentMessage.ID, llmResponse)
+		if err != nil {
+			zap.L().Error("error updating message", zap.Error(err))
+		}
+
 		return
 	}
-}
 
-// FindImages actually finds only 1 image for now
-func FindImages(msg *discordgo.MessageCreate, history []llm.HistoryItem) []string {
-	for _, attach := range msg.Attachments {
-		if !slices.Contains(imageContentTypes, attach.ContentType) {
-			continue
-		}
+	// Use streaming for OpenAI client
+	var fullResponse strings.Builder
+	var lastUpdateTime time.Time
+	updateInterval := 500 * time.Millisecond // Update message every 500ms
 
-		return []string{attach.URL}
-	}
+	_, streamErr := openaiClient.InferWithStream(ctx, config.Data.Model, system, llmRequest, allHistory,
+		func(content string, done bool) {
+			fullResponse.WriteString(content)
+			currentTime := time.Now()
 
-	for _, historyItem := range history {
-		for _, attach := range historyItem.Attachments {
-			if !slices.Contains(imageContentTypes, attach.ContentType) {
-				continue
+			// Create initial message when we receive the first content
+			if !messageCreated && content != "" {
+				var initialErr error
+				if msg.GuildID == "" {
+					sentMessage, initialErr = session.ChannelMessageSend(msg.ChannelID, content)
+				} else {
+					sentMessage, initialErr = session.ChannelMessageSendReply(msg.ChannelID, content, msg.Reference())
+				}
+
+				if initialErr != nil {
+					zap.L().Error("error sending initial message", zap.Error(initialErr))
+					return
+				}
+
+				// Save the initial bot response to the database
+				if messageDB != nil && sentMessage != nil {
+					err := messageDB.SaveMessage(sentMessage, true)
+					if err != nil {
+						zap.L().Error("failed to save initial bot response to database", zap.Error(err))
+					}
+				}
+
+				messageCreated = true
+				lastUpdateTime = currentTime
+				return
 			}
 
-			return []string{attach.URL}
-		}
+			// Update the message if enough time has passed or if it's the final update
+			if messageCreated && (done || currentTime.Sub(lastUpdateTime) >= updateInterval) {
+				responseText := fullResponse.String()
+
+				// Truncate if needed
+				if len(responseText) > 1999 {
+					responseText = responseText[:1999]
+				}
+
+				// Only update if there's content
+				if responseText != "" {
+					_, err := session.ChannelMessageEdit(sentMessage.ChannelID, sentMessage.ID, responseText)
+					if err != nil {
+						zap.L().Error("error updating message", zap.Error(err))
+					}
+					lastUpdateTime = currentTime
+				}
+			}
+		})
+
+	if streamErr != nil {
+		zap.L().Error("error while streaming from llm", zap.Error(streamErr))
+		// Try to update the message with the error
+		_, _ = session.ChannelMessageEdit(sentMessage.ChannelID, sentMessage.ID, "Error generating response")
+		return
 	}
 
-	return []string{}
+	// Final update to the message
+	finalResponse := fullResponse.String()
+	if len(finalResponse) > 1999 {
+		finalResponse = finalResponse[:1999]
+	}
+
+	if finalResponse == "" {
+		zap.L().Warn("empty llm response")
+		_, _ = session.ChannelMessageEdit(sentMessage.ChannelID, sentMessage.ID, "No response generated")
+		return
+	}
+
+	// Update the message with the final response
+	updatedMessage, editErr := session.ChannelMessageEdit(sentMessage.ChannelID, sentMessage.ID, finalResponse)
+	if editErr != nil {
+		zap.L().Error("error updating final message", zap.Error(editErr))
+		return
+	}
+
+	// Update the saved message in the database
+	if messageDB != nil && updatedMessage != nil {
+		err := messageDB.SaveMessage(updatedMessage, true)
+		if err != nil {
+			zap.L().Error("failed to save updated bot response to database", zap.Error(err))
+		}
+	}
 }
 
 func ParseURL(url string) (error, string) {
