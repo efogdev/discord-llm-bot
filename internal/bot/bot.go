@@ -149,11 +149,11 @@ func FetchHistory(message *discordgo.MessageCreate, session *discordgo.Session, 
 			}
 		}
 
-		history = append([]llm.HistoryItem{{
+		history = append(history, llm.HistoryItem{
 			IsBotMessage: current.Author.ID == botId,
 			Content:      current.Content,
 			Attachments:  current.Attachments,
-		}}, history...)
+		})
 
 		if current.Type == discordgo.MessageTypeReply {
 			current, _ = session.ChannelMessage(current.ChannelID, current.ID)

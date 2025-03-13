@@ -36,6 +36,7 @@ type OpenAIConfig struct {
 	Endpoint      string
 	ImageEndpoint string
 	ApiKey        string
+	Temperature   float64
 }
 
 type DatabaseConfig struct {
@@ -122,6 +123,7 @@ func Init() {
 		Endpoint:      viper.GetString("OPENAI_ENDPOINT"),
 		ImageEndpoint: viper.GetString("OPENAI_IMG_ENDPOINT"),
 		ApiKey:        viper.GetString("OPENAI_API_KEY"),
+		Temperature:   viper.GetFloat64("OPENAI_TEMPERATURE"),
 	}
 
 	config.Database = DatabaseConfig{

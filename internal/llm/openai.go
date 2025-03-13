@@ -80,9 +80,10 @@ func (c *OpenAIClient) InferStream(ctx context.Context, model string, system str
 
 	messages = append(messages, contentMessage)
 	requestBody := map[string]any{
-		"messages": messages,
-		"model":    model,
-		"stream":   true,
+		"messages":    messages,
+		"model":       model,
+		"stream":      true,
+		"temperature": config.Data.OpenAI.Temperature,
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
@@ -192,8 +193,9 @@ func (c *OpenAIClient) Infer(ctx context.Context, model string, system string, m
 
 	messages = append(messages, contentMessage)
 	requestBody := map[string]any{
-		"messages": messages,
-		"model":    model,
+		"messages":    messages,
+		"model":       model,
+		"temperature": config.Data.OpenAI.Temperature,
 	}
 
 	jsonBody, err := json.Marshal(requestBody)
