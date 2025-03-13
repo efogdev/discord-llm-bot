@@ -3,12 +3,10 @@ package bot
 import (
 	"context"
 	"discord-military-analyst-bot/internal/config"
+	"discord-military-analyst-bot/internal/db"
 	"discord-military-analyst-bot/internal/llm"
 	"errors"
 	"fmt"
-	"github.com/bwmarrin/discordgo"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
 	"net/http"
 	"os"
 	"os/exec"
@@ -16,6 +14,10 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/bwmarrin/discordgo"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 var imageContentTypes = []string{
@@ -40,13 +42,33 @@ const (
 	ImgDefaultCount  = 1
 )
 
+var messageDB *db.MessageDB
+
 type DiscordMessage struct {
 	Session *discordgo.Session
 	Message *discordgo.MessageCreate
 }
 
+// Close closes the database connection
+func Close() {
+	if messageDB != nil {
+		err := messageDB.Close()
+		if err != nil {
+			zap.L().Error("failed to close database connection", zap.Error(err))
+		}
+	}
+}
+
 func Init() (*discordgo.Session, chan *DiscordMessage) {
 	zap.L().Debug("initializing bot")
+
+	// Initialize database
+	var err error
+	messageDB, err = db.New(config.Data.Database.Path)
+	if err != nil {
+		zap.L().Panic("failed to initialize database", zap.Error(err))
+		return nil, nil
+	}
 
 	discord, err := discordgo.New("Bot " + config.Data.Discord.Token)
 	queue := make(chan *DiscordMessage, 128)
@@ -118,14 +140,42 @@ func FetchHistory(message *discordgo.MessageCreate, session *discordgo.Session, 
 		return errors.New("bot not mentioned"), nil
 	}
 
+	// First try to get history from the database
+	if messageDB != nil && message.ID != "" {
+		// Save the current message to the database
+		if message.ReferencedMessage != nil {
+			// Save the referenced message first if it exists
+			err := messageDB.SaveMessage(message.ReferencedMessage, message.ReferencedMessage.Author.ID == botId)
+			if err != nil {
+				zap.L().Error("failed to save referenced message to database", zap.Error(err))
+			}
+		}
+
+		// Try to get history from the database
+		history, err := messageDB.GetMessageHistory(message.ID, botId)
+		if err == nil && len(history) > 0 {
+			zap.L().Debug("retrieved message history from database", zap.Int("count", len(history)))
+			return nil, history
+		}
+	}
+
+	// If not found in database or database is not initialized, fetch from Discord
+	zap.L().Debug("fetching message history from Discord")
 	var history []llm.HistoryItem
 
 	current := message.ReferencedMessage
 	for current != nil {
-		cleanContent := regexp.MustCompile(`<@([0-9]+?)>`).ReplaceAllString(current.Content, "")
+		// Save message to database as we fetch it
+		if messageDB != nil {
+			err := messageDB.SaveMessage(current, current.Author.ID == botId)
+			if err != nil {
+				zap.L().Error("failed to save message to database", zap.Error(err))
+			}
+		}
+
 		history = append([]llm.HistoryItem{{
 			IsBotMessage: current.Author.ID == botId,
-			Content:      cleanContent,
+			Content:      current.Content,
 			Attachments:  current.Attachments,
 		}}, history...)
 
@@ -150,6 +200,14 @@ func ReadSystemPrompt() (error, string) {
 }
 
 func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, client llm.Client, ctx context.Context) {
+	// Save the incoming message to the database
+	if messageDB != nil {
+		err := messageDB.SaveMessage(msg.Message, false)
+		if err != nil {
+			zap.L().Error("failed to save message to database", zap.Error(err))
+		}
+	}
+
 	err, history := FetchHistory(msg, session, config.Data.Discord.BotId)
 	if err != nil && msg.GuildID != "" {
 		return
@@ -225,7 +283,7 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 		url = FindURL(msg.ReferencedMessage.Content)
 	}
 
-	system := "Keep your response very short, two to three sentenses. Be VERY concise and say only important things not meaningful words."
+	system := "Keep your response short. Be concise and say only important things, not meaningful words (water)."
 	err = nil
 	if !ignoreSystemPrompt {
 		err, system = ReadSystemPrompt()
@@ -279,8 +337,20 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 		zap.L().Info("attaching images", zap.Any("images", images))
 	}
 
-	zap.L().Debug("inferencing", zap.String("content", llmRequest), zap.Any("history", history))
-	llmResponse, err = client.Infer(ctx, config.Data.Model, system, llmRequest, history, images)
+	// Get all related messages from the database for context
+	var allHistory []llm.HistoryItem
+	if messageDB != nil {
+		allHistory, err = messageDB.GetAllRelatedMessages(msg.ID, config.Data.Discord.BotId)
+		if err != nil {
+			zap.L().Error("failed to get all related messages", zap.Error(err))
+			allHistory = history // Fallback to direct history
+		}
+	} else {
+		allHistory = history
+	}
+
+	zap.L().Debug("inferencing", zap.String("content", llmRequest), zap.Any("history", allHistory))
+	llmResponse, err = client.Infer(ctx, config.Data.Model, system, llmRequest, allHistory, images)
 
 	if err != nil {
 		zap.L().Error("error while trying to infer an llm", zap.Error(err))
@@ -298,10 +368,19 @@ func HandleMessage(msg *discordgo.MessageCreate, session *discordgo.Session, cli
 
 	zap.L().Info("sending reply", zap.String("text", llmResponse))
 
+	var sentMessage *discordgo.Message
 	if msg.GuildID == "" {
-		_, err = session.ChannelMessageSend(msg.ChannelID, llmResponse)
+		sentMessage, err = session.ChannelMessageSend(msg.ChannelID, llmResponse)
 	} else {
-		_, err = session.ChannelMessageSendReply(msg.ChannelID, llmResponse, msg.Reference())
+		sentMessage, err = session.ChannelMessageSendReply(msg.ChannelID, llmResponse, msg.Reference())
+	}
+
+	// Save the bot's response to the database
+	if messageDB != nil && sentMessage != nil {
+		err := messageDB.SaveMessage(sentMessage, true)
+		if err != nil {
+			zap.L().Error("failed to save bot response to database", zap.Error(err))
+		}
 	}
 
 	if err != nil {

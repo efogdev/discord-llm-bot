@@ -38,9 +38,14 @@ type OpenAIConfig struct {
 	ApiKey        string
 }
 
+type DatabaseConfig struct {
+	Path string
+}
+
 type Config struct {
 	Discord    DiscordConfig
 	OpenAI     OpenAIConfig
+	Database   DatabaseConfig
 	Provider   LLMProvider
 	Model      string
 	ImageModel string
@@ -117,6 +122,10 @@ func Init() {
 		Endpoint:      viper.GetString("OPENAI_ENDPOINT"),
 		ImageEndpoint: viper.GetString("OPENAI_IMG_ENDPOINT"),
 		ApiKey:        viper.GetString("OPENAI_API_KEY"),
+	}
+
+	config.Database = DatabaseConfig{
+		Path: viper.GetString("DB_PATH"),
 	}
 
 	config.Model = viper.GetString("MODEL")

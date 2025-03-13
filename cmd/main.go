@@ -5,9 +5,10 @@ import (
 	"discord-military-analyst-bot/internal/bot"
 	"discord-military-analyst-bot/internal/config"
 	"discord-military-analyst-bot/internal/llm"
-	"go.uber.org/zap"
 	"os"
 	"os/signal"
+
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -32,10 +33,12 @@ func main() {
 			go bot.HandleMessage(discordMessage.Message, discordMessage.Session, inferenceProvider, appCtx)
 		case <-appCtx.Done():
 			_ = botInstance.Close()
+			bot.Close() // Close database connection
 		case <-interrupt:
 			zap.L().Info("exiting")
 			cancel()
 			_ = botInstance.Close()
+			bot.Close() // Close database connection
 			zap.L().Debug("done")
 			return
 		}
